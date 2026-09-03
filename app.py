@@ -1,0 +1,259 @@
+# pyrefly: ignore [missing-import]
+import io
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+import streamlit as st
+
+st.set_page_config(page_title="Renewal Flyer Generator", page_icon="🎨", layout="centered")
+
+st.title("Custom Renewal Flyer")
+st.write("Customize your Toastmasters renewal flyer by picking a template, adding your photo, and entering your reason to continue.")
+st.divider()
+
+# 1. Flyer Selection
+st.subheader("1. Choose Your Flyer")
+col1, col2 = st.columns(2)
+with col1:
+    st.image("flyer_1.jpeg", caption="Flyer 1 (Maroon)", use_container_width=True)
+with col2:
+    st.image("flyer_2.jpeg", caption="Flyer 2 (Light)", use_container_width=True)
+
+flyer_choice = st.radio(
+    "Which flyer are you choosing?",
+    options=["Flyer 1 (Maroon)", "Flyer 2 (Light)"],
+    index=0,
+    horizontal=True,
+)
+
+flyer_map = {
+    "Flyer 1 (Maroon)": "flyer_1.jpeg",
+    "Flyer 2 (Light)": "flyer_2.jpeg",
+}
+selected_flyer_path = flyer_map[flyer_choice]
+
+st.divider()
+
+# 2. Image Input
+st.subheader("2. Upload Your Photo")
+st.write("Please use [remove.bg](https://www.remove.bg/) on your image to remove the background and upload")
+
+col_prev, _ = st.columns(2)
+with col_prev:
+    st.image("flyer_preview.jpeg", caption="Example: How to align your image", use_container_width=True)
+
+uploaded_file = st.file_uploader(
+    "Upload your photo to place in the flyer",
+    type=["jpg", "jpeg", "png"],
+    help="Upload a clear portrait or headshot photo.",
+    max_upload_size=10,
+)
+
+# Optional photo adjustments
+with st.expander("Photo Adjustment Options", expanded=False):
+    photo_shape = st.radio("Photo Style", ["Circle", "Square"], horizontal=True)
+    photo_size = st.slider("Photo Size (px)", min_value=150, max_value=450, value=260, step=5)
+    pos_x = st.slider("Horizontal Position (X)", min_value=50, max_value=500, value=205, step=5)
+    pos_y = st.slider("Vertical Position (Y)", min_value=150, max_value=600, value=400, step=5)
+
+st.divider()
+
+# 3. Reason to Continue Input
+st.subheader("3. Enter Your Reason to Continue")
+reason_text = st.text_area(
+    "My Reason to Continue",
+    value="To build confidence, conquer stage fear, and inspire others through impactful leadership and authentic storytelling.",
+    placeholder="Write your reason for renewing here...",
+    help="What you write here will appear below 'MY REASON TO CONTINUE' on your flyer in Montserrat font.",
+    height=50,
+)
+
+with st.expander("Text Formatting & Font Options (Optional)", expanded=False):
+    font_size = st.slider("Font Size (px)", min_value=18, max_value=42, value=28, step=1)
+    font_weight = st.selectbox("Font Weight", ["Medium", "SemiBold", "Bold", "Regular"], index=0)
+    line_spacing = st.slider("Line Spacing", min_value=1.1, max_value=2.0, value=1.4, step=0.05)
+
+st.divider()
+
+# 4. Toastmaster Since Year Input
+st.subheader("4. Enter the year from which you are a toastmaster")
+since_year = st.text_input(
+    "Toastmaster since (Year)",
+    value="2024",
+    max_chars=4,
+    help="Enter the year you joined Toastmasters. It will appear next to 'TOASTMASTER SINCE' on your flyer in Semi-Bold Montserrat font.",
+)
+
+
+
+def prepare_photo(img: Image.Image, size: int, style: str) -> Image.Image:
+    img = ImageOps.exif_transpose(img).convert("RGBA")
+
+    # If Cutout style, preserve aspect ratio of the transparent subject
+    if style == "Cutout (Transparent)":
+        w, h = img.size
+        scale = size / max(w, h)
+        new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
+        return img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    # Square center-crop for Circle / Square
+    w, h = img.size
+    min_dim = min(w, h)
+    left = (w - min_dim) // 2
+    top = (h - min_dim) // 2
+    cropped = img.crop((left, top, left + min_dim, top + min_dim))
+    resized = cropped.resize((size, size), Image.Resampling.LANCZOS)
+
+    if style == "Circle":
+        scale = 4
+        mask = Image.new("L", (size * scale, size * scale), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse((0, 0, size * scale - 1, size * scale - 1), fill=255)
+        mask = mask.resize((size, size), Image.Resampling.LANCZOS)
+
+        output = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        output.paste(resized, (0, 0), mask=mask)
+        return output
+    else:  # Square
+        return resized
+
+
+def draw_reason_text(
+    flyer_img: Image.Image,
+    text: str,
+    start_x: int = 65,
+    start_y: int = 655,
+    max_width: int = 700,
+    font_size: int = 28,
+    font_weight: str = "Medium",
+    line_spacing: float = 1.4,
+) -> Image.Image:
+    if not text or not text.strip():
+        return flyer_img
+
+    draw = ImageDraw.Draw(flyer_img)
+    font_filename = f"Montserrat-{font_weight}.ttf"
+    try:
+        font = ImageFont.truetype(font_filename, font_size)
+    except Exception:
+        font = ImageFont.load_default()
+
+    # Wrap each paragraph by pixel width
+    paragraphs = text.split("\n")
+    lines = []
+    for para in paragraphs:
+        if not para.strip():
+            lines.append("")
+            continue
+        words = para.split()
+        current_line = []
+        for word in words:
+            test_line = " ".join(current_line + [word])
+            bbox = draw.textbbox((0, 0), test_line, font=font)
+            w = bbox[2] - bbox[0]
+            if w <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(" ".join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+                    current_line = []
+        if current_line:
+            lines.append(" ".join(current_line))
+
+    # Render lines with proper vertical spacing
+    y = start_y
+    for line in lines:
+        if line:
+            draw.text((start_x, y), line, font=font, fill=(255, 255, 255))
+            bbox = draw.textbbox((0, 0), line, font=font)
+            line_h = bbox[3] - bbox[1]
+            y += int(line_h * line_spacing)
+        else:
+            y += int(font_size * line_spacing * 0.7)
+
+    return flyer_img
+
+
+def draw_toastmaster_since_year(
+    flyer_img: Image.Image,
+    year_text: str,
+    start_x: int = 298,
+    start_y: int = 963,
+    font_size: int = 22,
+) -> Image.Image:
+    if not year_text or not str(year_text).strip():
+        return flyer_img
+
+    draw = ImageDraw.Draw(flyer_img)
+    try:
+        font = ImageFont.truetype("Montserrat-Medium.ttf", font_size)
+    except Exception:
+        font = ImageFont.load_default()
+
+    # Color matches the template's 'TOASTMASTER SINCE' cyan/light blue
+    text_color = (255, 255, 255)
+    draw.text((start_x, start_y), str(year_text).strip(), font=font, fill=text_color)
+    return flyer_img
+
+
+st.divider()
+
+# 5. Preview and Download
+st.subheader("5. Flyer Preview")
+
+try:
+    base_flyer = Image.open(selected_flyer_path).convert("RGBA")
+
+    # If user uploaded photo, prepare and paste it
+    if uploaded_file is not None:
+        user_image = Image.open(uploaded_file)
+        processed_photo = prepare_photo(
+            user_image,
+            size=photo_size,
+            style=photo_shape,
+        )
+
+        # Paste onto flyer centered at (pos_x, pos_y)
+        pw, ph = processed_photo.size
+        top_left_x = pos_x - (pw // 2)
+        top_left_y = pos_y - (ph // 2)
+        base_flyer.paste(processed_photo, (top_left_x, top_left_y), processed_photo)
+
+    # Render Reason text on flyer below 'MY REASON TO CONTINUE'
+    base_flyer = draw_reason_text(
+        base_flyer,
+        text=reason_text,
+        start_x=65,
+        start_y=655,
+        max_width=700,
+        font_size=font_size,
+        font_weight=font_weight,
+        line_spacing=line_spacing,
+    )
+
+    # Render Toastmaster since year next to 'TOASTMASTER SINCE'
+    final_flyer = draw_toastmaster_since_year(
+        base_flyer,
+        year_text=since_year,
+    ).convert("RGB")
+
+    st.image(final_flyer, caption="Your Customized Flyer Preview", use_container_width=True)
+
+    # Prepare download buffer
+    buf = io.BytesIO()
+    final_flyer.save(buf, format="JPEG", quality=95)
+    byte_im = buf.getvalue()
+
+    st.download_button(
+        label="📥 Download Customized Flyer",
+        data=byte_im,
+        file_name=f"custom_{selected_flyer_path}",
+        mime="image/jpeg",
+    )
+
+except Exception as e:
+    st.error(f"Error generating flyer: {e}")
+
+
+
