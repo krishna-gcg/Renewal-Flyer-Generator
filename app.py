@@ -73,15 +73,25 @@ with st.expander("Text Formatting & Font Options (Optional)", expanded=False):
 
 st.divider()
 
-# 4. Toastmaster Since Year Input
-st.subheader("4. Enter the year from which you are a toastmaster")
+# 4. Member Name Input
+st.subheader("4. Enter Your Name")
+member_name = st.text_input(
+    "Your Name (as it should appear on the flyer)",
+    value="Vinoth, DTM",
+    placeholder="e.g. DTM Vinoth ",
+    help="Enter your name. It will appear directly above 'TOASTMASTER SINCE' on your flyer in gold Montserrat font.",
+)
+
+st.divider()
+
+# 5. Toastmaster Since Year Input
+st.subheader("5. Enter the year from which you are a toastmaster")
 since_year = st.text_input(
     "Toastmaster since (Year)",
     value="2024",
     max_chars=4,
-    help="Enter the year you joined Toastmasters. It will appear next to 'TOASTMASTER SINCE' on your flyer in Semi-Bold Montserrat font.",
+    help="Enter the year you joined Toastmasters. It will appear next to 'TOASTMASTER SINCE'.",
 )
-
 
 
 def prepare_photo(img: Image.Image, size: int, style: str) -> Image.Image:
@@ -175,6 +185,48 @@ def draw_reason_text(
     return flyer_img
 
 
+def draw_member_name(
+    flyer_img: Image.Image,
+    name_text: str,
+    start_x: int = 66,
+    start_y: int = 927,
+    max_width: int = 530,
+    base_font_size: int = 28,
+) -> Image.Image:
+    draw = ImageDraw.Draw(flyer_img)
+    # Clear existing template placeholder name
+    bg_color = (0, 86, 134)
+    draw.rectangle([(64, 924), (540, 958)], fill=bg_color)
+
+    clean_name = str(name_text).strip() if name_text else ""
+    if not clean_name:
+        return flyer_img
+
+    font_size = base_font_size
+    try:
+        font = ImageFont.truetype("Montserrat-Bold.ttf", font_size)
+    except Exception:
+        font = ImageFont.load_default()
+
+    bbox = draw.textbbox((0, 0), clean_name, font=font)
+    text_w = bbox[2] - bbox[0]
+
+    # Auto scale if name is long
+    while text_w > max_width and font_size > 16:
+        font_size -= 1
+        try:
+            font = ImageFont.truetype("Montserrat-Bold.ttf", font_size)
+        except Exception:
+            break
+        bbox = draw.textbbox((0, 0), clean_name, font=font)
+        text_w = bbox[2] - bbox[0]
+
+    adjusted_y = start_y + (base_font_size - font_size) // 2
+    name_color = (244, 224, 126)
+    draw.text((start_x, adjusted_y), clean_name, font=font, fill=name_color)
+    return flyer_img
+
+
 def draw_toastmaster_since_year(
     flyer_img: Image.Image,
     year_text: str,
@@ -191,7 +243,6 @@ def draw_toastmaster_since_year(
     except Exception:
         font = ImageFont.load_default()
 
-    # Color matches the template's 'TOASTMASTER SINCE' cyan/light blue
     text_color = (255, 255, 255)
     draw.text((start_x, start_y), str(year_text).strip(), font=font, fill=text_color)
     return flyer_img
@@ -199,8 +250,8 @@ def draw_toastmaster_since_year(
 
 st.divider()
 
-# 5. Preview and Download
-st.subheader("5. Flyer Preview")
+# 6. Preview and Download
+st.subheader("6. Flyer Preview")
 
 try:
     base_flyer = Image.open(selected_flyer_path).convert("RGBA")
@@ -230,6 +281,12 @@ try:
         font_size=font_size,
         font_weight=font_weight,
         line_spacing=line_spacing,
+    )
+
+    # Render Member Name directly above 'TOASTMASTER SINCE'
+    base_flyer = draw_member_name(
+        base_flyer,
+        name_text=member_name,
     )
 
     # Render Toastmaster since year next to 'TOASTMASTER SINCE'
