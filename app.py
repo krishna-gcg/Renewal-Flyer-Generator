@@ -1,9 +1,30 @@
-# pyrefly: ignore [missing-import]
+import csv
+from datetime import datetime
 import io
+import os
+from zoneinfo import ZoneInfo
+import pandas as pd
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import streamlit as st
 
 st.set_page_config(page_title="Renewal Flyer Generator", page_icon="🎨", layout="centered")
+
+LOCAL_CSV_PATH = "submissions.csv"
+
+
+def record_submission(payload: dict) -> None:
+    """Silently records submission to local submissions.csv file."""
+    file_exists = os.path.isfile(LOCAL_CSV_PATH)
+    try:
+        with open(LOCAL_CSV_PATH, mode="a", newline="", encoding="utf-8") as f:
+            fieldnames = ["timestamp", "flyer", "name", "toastmaster_since", "reason"]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(payload)
+    except Exception as e:
+        print(f"Error saving submission: {e}")
+
 
 st.title("Custom Renewal Flyer")
 st.write("Customize your Toastmasters renewal flyer by picking a template, adding your photo, and entering your reason to continue.")
@@ -44,15 +65,8 @@ uploaded_file = st.file_uploader(
     "Upload your photo to place in the flyer",
     type=["jpg", "jpeg", "png"],
     help="Upload a clear portrait or headshot photo.",
-    max_upload_size=10,
+    max_upload_size=20,
 )
-
-# Optional photo adjustments
-with st.expander("Photo Adjustment Options", expanded=False):
-    photo_shape = st.radio("Photo Style", ["Circle", "Square"], horizontal=True)
-    photo_size = st.slider("Photo Size (px)", min_value=150, max_value=450, value=260, step=5)
-    pos_x = st.slider("Horizontal Position (X)", min_value=50, max_value=500, value=205, step=5)
-    pos_y = st.slider("Vertical Position (Y)", min_value=150, max_value=600, value=400, step=5)
 
 st.divider()
 
@@ -93,6 +107,13 @@ since_year = st.text_input(
     help="Enter the year you joined Toastmasters. It will appear next to 'TOASTMASTER SINCE'.",
 )
 
+st.divider()
+
+with st.expander("Photo Adjustment Options", expanded=False):
+    photo_shape = st.radio("Photo Style", ["Cutout (Transparent)", "Circle", "Square"], index=0, horizontal=True)
+    photo_size = st.slider("Photo Size (px)", min_value=150, max_value=450, value=260, step=5)
+    pos_x = st.slider("Horizontal Position (X)", min_value=50, max_value=500, value=205, step=5)
+    pos_y = st.slider("Vertical Position (Y)", min_value=150, max_value=600, value=400, step=5)
 
 def prepare_photo(img: Image.Image, size: int, style: str) -> Image.Image:
     img = ImageOps.exif_transpose(img).convert("RGBA")
@@ -250,8 +271,8 @@ def draw_toastmaster_since_year(
 
 st.divider()
 
-# 6. Preview and Download
-st.subheader("6. Flyer Preview")
+# 6. Preview and Save / Download
+st.subheader("6. Flyer Preview & Save")
 
 try:
     base_flyer = Image.open(selected_flyer_path).convert("RGBA")
@@ -302,15 +323,85 @@ try:
     final_flyer.save(buf, format="JPEG", quality=95)
     byte_im = buf.getvalue()
 
-    st.download_button(
-        label="📥 Download Customized Flyer",
-        data=byte_im,
-        file_name=f"custom_{selected_flyer_path}",
-        mime="image/jpeg",
-    )
+    if "submitted" not in st.session_state:
+        st.session_state.submitted = False
+
+    submit_clicked = st.button("Submit", type="primary", use_container_width=True)
+
+    if submit_clicked:
+        if not member_name or not member_name.strip():
+            st.error("Please enter your name in Section 4.")
+        elif not since_year or not str(since_year).strip():
+            st.error("Please enter the year you joined Toastmasters in Section 5.")
+        elif not reason_text or not reason_text.strip():
+            st.error("Please enter your reason to continue in Section 3.")
+        else:
+            timestamp = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
+            payload = {
+                "timestamp": timestamp,
+                "flyer": flyer_choice,
+                "name": member_name.strip(),
+                "toastmaster_since": str(since_year).strip(),
+                "reason": reason_text.strip(),
+            }
+            record_submission(payload)
+            st.session_state.submitted = True
+
+    if st.session_state.submitted:
+        st.success("🎉 Your flyer is ready!")
+        st.download_button(
+            label="📥 Download Flyer",
+            data=byte_im,
+            file_name=f"custom_{selected_flyer_path}",
+            mime="image/jpeg",
+            use_container_width=True,
+        )
 
 except Exception as e:
     st.error(f"Error generating flyer: {e}")
 
+# 7. Admin Portal (Protected)
+st.divider()
+with st.expander("🔒 Admin Portal", expanded=False):
+    if "admin_logged_in" not in st.session_state:
+        st.session_state.admin_logged_in = False
 
+    if not st.session_state.admin_logged_in:
+        with st.form("admin_login_form"):
+            st.write("Admin Login")
+            admin_user = st.text_input("Username")
+            admin_pass = st.text_input("Password", type="password")
+            login_btn = st.form_submit_button("Login")
 
+            if login_btn:
+                if admin_user == "District 229" and admin_pass == "Vedha_123@!":
+                    st.session_state.admin_logged_in = True
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password.")
+    else:
+        col_adm_title, col_logout = st.columns([3, 1])
+        with col_adm_title:
+            st.write("Logged in as **District 229**")
+        with col_logout:
+            if st.button("Logout"):
+                st.session_state.admin_logged_in = False
+                st.rerun()
+
+        if os.path.isfile(LOCAL_CSV_PATH):
+            try:
+                df_submissions = pd.read_csv(LOCAL_CSV_PATH)
+                st.write(f"Total Submissions: **{len(df_submissions)}**")
+                st.dataframe(df_submissions, use_container_width=True)
+                with open(LOCAL_CSV_PATH, "rb") as f:
+                    st.download_button(
+                        label="📥 Download Submissions (CSV)",
+                        data=f.read(),
+                        file_name="submissions.csv",
+                        mime="text/csv",
+                        key="admin_csv_download",
+                    )
+            except Exception as err:
+                st.error(f"Error loading submissions: {err}")
+        else:
+            st.info("No submissions recorded yet.")
