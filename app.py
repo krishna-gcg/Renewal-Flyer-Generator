@@ -1,29 +1,25 @@
-import csv
-from datetime import datetime
 import io
-import os
-from zoneinfo import ZoneInfo
-import pandas as pd
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+import requests
 import streamlit as st
 
 st.set_page_config(page_title="Renewal Flyer Generator", page_icon="🎨", layout="centered")
 
-LOCAL_CSV_PATH = "submissions.csv"
+GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfF6zDwkwcRYpuVVA8q6Ovtsv83qPTDeLRwwaKWGvldbLmstA/formResponse"
 
 
 def record_submission(payload: dict) -> None:
-    """Silently records submission to local submissions.csv file."""
-    file_exists = os.path.isfile(LOCAL_CSV_PATH)
+    """Silently syncs submission to Google Sheet via Google Form."""
     try:
-        with open(LOCAL_CSV_PATH, mode="a", newline="", encoding="utf-8") as f:
-            fieldnames = ["timestamp", "flyer", "name", "toastmaster_since", "reason"]
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(payload)
+        form_data = {
+            "entry.1969885965": payload.get("name", ""),
+            "entry.649682310": payload.get("toastmaster_since", ""),
+            "entry.606845149": payload.get("reason", ""),
+            "entry.943728985": payload.get("flyer", ""),
+        }
+        requests.post(GOOGLE_FORM_URL, data=form_data, timeout=5)
     except Exception as e:
-        print(f"Error saving submission: {e}")
+        print(f"Error syncing to Google Sheet: {e}")
 
 
 st.title("Custom Renewal Flyer")
@@ -325,6 +321,8 @@ try:
 
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
+    if "last_submitted_payload" not in st.session_state:
+        st.session_state.last_submitted_payload = None
 
     submit_clicked = st.button("Submit", type="primary", use_container_width=True)
 
@@ -336,15 +334,17 @@ try:
         elif not reason_text or not reason_text.strip():
             st.error("Please enter your reason to continue in Section 3.")
         else:
-            timestamp = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%Y-%m-%d %H:%M:%S")
             payload = {
-                "timestamp": timestamp,
                 "flyer": flyer_choice,
                 "name": member_name.strip(),
                 "toastmaster_since": str(since_year).strip(),
                 "reason": reason_text.strip(),
             }
-            record_submission(payload)
+            # Only send to Google Form if the data is new or has changed
+            if st.session_state.last_submitted_payload != payload:
+                record_submission(payload)
+                st.session_state.last_submitted_payload = payload
+
             st.session_state.submitted = True
 
     if st.session_state.submitted:
@@ -359,49 +359,3 @@ try:
 
 except Exception as e:
     st.error(f"Error generating flyer: {e}")
-
-# 7. Admin Portal (Protected)
-st.divider()
-with st.expander("🔒 Admin Portal", expanded=False):
-    if "admin_logged_in" not in st.session_state:
-        st.session_state.admin_logged_in = False
-
-    if not st.session_state.admin_logged_in:
-        with st.form("admin_login_form"):
-            st.write("Admin Login")
-            admin_user = st.text_input("Username")
-            admin_pass = st.text_input("Password", type="password")
-            login_btn = st.form_submit_button("Login")
-
-            if login_btn:
-                if admin_user == "District 229" and admin_pass == "Vedha_123@!":
-                    st.session_state.admin_logged_in = True
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password.")
-    else:
-        col_adm_title, col_logout = st.columns([3, 1])
-        with col_adm_title:
-            st.write("Logged in as **District 229**")
-        with col_logout:
-            if st.button("Logout"):
-                st.session_state.admin_logged_in = False
-                st.rerun()
-
-        if os.path.isfile(LOCAL_CSV_PATH):
-            try:
-                df_submissions = pd.read_csv(LOCAL_CSV_PATH)
-                st.write(f"Total Submissions: **{len(df_submissions)}**")
-                st.dataframe(df_submissions, use_container_width=True)
-                with open(LOCAL_CSV_PATH, "rb") as f:
-                    st.download_button(
-                        label="📥 Download Submissions (CSV)",
-                        data=f.read(),
-                        file_name="submissions.csv",
-                        mime="text/csv",
-                        key="admin_csv_download",
-                    )
-            except Exception as err:
-                st.error(f"Error loading submissions: {err}")
-        else:
-            st.info("No submissions recorded yet.")
