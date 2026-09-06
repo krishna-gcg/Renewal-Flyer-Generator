@@ -348,14 +348,16 @@ try:
         elif not reason_text or not reason_text.strip():
             st.error("Please enter your reason to continue in Section 3.")
         else:
-            payload = {
-                "flyer": flyer_choice,
-                "name": member_name.strip(),
-                "toastmaster_since": str(since_year).strip(),
-                "reason": reason_text.strip(),
-            }
-            record_submission(payload)
-            st.session_state.submitted_inputs = current_inputs
+            # Only send to Google Form if the data is new or has changed
+            if st.session_state.submitted_inputs != current_inputs:
+                payload = {
+                    "flyer": flyer_choice,
+                    "name": member_name.strip(),
+                    "toastmaster_since": str(since_year).strip(),
+                    "reason": reason_text.strip(),
+                }
+                record_submission(payload)
+                st.session_state.submitted_inputs = current_inputs
 
     # Download button is shown ONLY if the user has submitted the current configuration
     if (
