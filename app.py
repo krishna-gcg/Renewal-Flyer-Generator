@@ -319,10 +319,24 @@ try:
     final_flyer.save(buf, format="JPEG", quality=95)
     byte_im = buf.getvalue()
 
-    if "submitted" not in st.session_state:
-        st.session_state.submitted = False
-    if "last_submitted_payload" not in st.session_state:
-        st.session_state.last_submitted_payload = None
+    # Track current state of user inputs
+    current_inputs = {
+        "flyer": flyer_choice,
+        "photo": (uploaded_file.name, uploaded_file.size) if uploaded_file else None,
+        "reason": reason_text.strip(),
+        "font_size": font_size,
+        "font_weight": font_weight,
+        "line_spacing": line_spacing,
+        "name": member_name.strip(),
+        "since_year": str(since_year).strip(),
+        "photo_shape": photo_shape,
+        "photo_size": photo_size,
+        "pos_x": pos_x,
+        "pos_y": pos_y,
+    }
+
+    if "submitted_inputs" not in st.session_state:
+        st.session_state.submitted_inputs = None
 
     submit_clicked = st.button("Submit", type="primary", use_container_width=True)
 
@@ -340,14 +354,14 @@ try:
                 "toastmaster_since": str(since_year).strip(),
                 "reason": reason_text.strip(),
             }
-            # Only send to Google Form if the data is new or has changed
-            if st.session_state.last_submitted_payload != payload:
-                record_submission(payload)
-                st.session_state.last_submitted_payload = payload
+            record_submission(payload)
+            st.session_state.submitted_inputs = current_inputs
 
-            st.session_state.submitted = True
-
-    if st.session_state.submitted:
+    # Download button is shown ONLY if the user has submitted the current configuration
+    if (
+        st.session_state.submitted_inputs is not None
+        and st.session_state.submitted_inputs == current_inputs
+    ):
         st.success("🎉 Your flyer is ready!")
         st.download_button(
             label="📥 Download Flyer",
